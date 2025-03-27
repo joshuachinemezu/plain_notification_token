@@ -10,8 +10,7 @@ import androidx.annotation.NonNull;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
-import com.google.firebase.iid.FirebaseInstanceId;
-import com.google.firebase.iid.InstanceIdResult;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.BinaryMessenger;
@@ -19,7 +18,6 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
 
 /**
  * PlainNotificationTokenPlugin
@@ -27,16 +25,14 @@ import io.flutter.plugin.common.PluginRegistry.Registrar;
 public class PlainNotificationTokenPlugin extends BroadcastReceiver implements FlutterPlugin, MethodCallHandler {
     private Context context;
     private MethodChannel methodChannel;
+    private String lastToken = null;
     
     public PlainNotificationTokenPlugin() {}
-
-    public static void registerWith(Registrar registrar) {
-        new PlainNotificationTokenPlugin().onAttached(registrar.context(), registrar.messenger());
-    }
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
         onAttached(binding.getApplicationContext(), binding.getBinaryMessenger());
+        FirebaseApp.initializeApp(binding.getApplicationContext());
     }
 
     @Override
@@ -44,7 +40,6 @@ public class PlainNotificationTokenPlugin extends BroadcastReceiver implements F
         context = null;
         methodChannel.setMethodCallHandler(null);
         methodChannel = null;
-
     }
 
     private void onAttached(Context applicationContext, BinaryMessenger messenger) {
@@ -55,32 +50,22 @@ public class PlainNotificationTokenPlugin extends BroadcastReceiver implements F
 
     static final String TAG = PlainNotificationTokenPlugin.class.getSimpleName();
 
-    private String lastToken = null;
-    private MethodChannel channel;
-
-    private PlainNotificationTokenPlugin(MethodChannel channel, Registrar registrar) {
-        this.channel = channel;
-        FirebaseApp.initializeApp(registrar.context());
-    }
-
     @Override
     public void onMethodCall(final @NonNull MethodCall call, final @NonNull Result result) {
         if (call.method.equals("getToken")) {
-            FirebaseInstanceId.getInstance()
-                    .getInstanceId()
-                    .addOnCompleteListener(
-                            new OnCompleteListener<InstanceIdResult>() {
-                                @Override
-                                public void onComplete(@NonNull Task<InstanceIdResult> task) {
-                                    if (!task.isSuccessful()) {
-                                        Log.w(TAG, "getToken, error fetching instanceID: ", task.getException());
-                                        result.success(null);
-                                        return;
-                                    }
+            FirebaseMessaging.getInstance().getToken()
+                    .addOnCompleteListener(new OnCompleteListener<String>() {
+                        @Override
+                        public void onComplete(@NonNull Task<String> task) {
+                            if (!task.isSuccessful()) {
+                                Log.w(TAG, "getToken, error fetching FCM token: ", task.getException());
+                                result.success(null);
+                                return;
+                            }
 
-                                    result.success(task.getResult().getToken());
-                                }
-                            });
+                            result.success(task.getResult());
+                        }
+                    });
         } else {
             result.notImplemented();
         }
@@ -96,7 +81,7 @@ public class PlainNotificationTokenPlugin extends BroadcastReceiver implements F
 
         if (action.equals(NewTokenReceiveService.ACTION_TOKEN)) {
             String token = intent.getStringExtra(NewTokenReceiveService.EXTRA_TOKEN);
-            channel.invokeMethod("onToken", token);
+            methodChannel.invokeMethod("onToken", token);
         }
     }
 }
